@@ -673,6 +673,8 @@ async function main(): Promise<void> {
       }
       return forwardWebRequest(request, hostUrl, hostCookie)
     }
+    // Shell-owned dialog pages (update, mandatory update, recovery) live outside the Web frontend.
+    if (url.hostname === 'shell') return serveWebDocument(request, join(app.getAppPath(), 'renderer'))
     return Promise.resolve(new Response(null, { status: 404 }))
   })
 

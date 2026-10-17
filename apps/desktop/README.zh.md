@@ -384,6 +384,15 @@ pnpm run package:desktop:dir
 pnpm run package:desktop:mac:arm64:dir
 ```
 
+不需要 Apple Developer ID 签名或公证凭据，只想在本地生成一个双击即可启动的 macOS `.app` 时，使用对应的 `:unsigned` 命令：
+
+```sh
+pnpm run package:desktop:mac:arm64:unsigned
+pnpm run package:desktop:mac:x64:unsigned
+```
+
+它执行相同的构建与运行时准备，组装未打包的应用目录，并对每个内嵌 Mach-O 文件及最终应用包做 ad-hoc 签名，使其能在 Apple Silicon 上启动。产物写入 `apps/desktop/.desktop-build/targets/<target>/artifacts/<platform>/DeepSeek Harness.app`（arm64 为 `mac-arm64`，x64 为 `mac`）。本地 `.env.macos` 仍需要 `DSH_DESKTOP_APP_ID` 与所选强制更新来源，但不需要任何签名或公证字段。产物仅带匿名 ad-hoc 签名且没有自动更新配置，只用于本地开发，不能用于发布上传。`pnpm run install:desktop:mac:arm64` 执行上述 arm64 构建，并将产物覆盖到 `/Applications/DeepSeek Harness.app`，使已有的 Finder 或 Dock 图标在每次更新后启动新构建的应用。
+
 需要检查或诊断为宿主目标准备的资源而不调用 electron-builder 时，可以让同一流水线在准备完成后停止：
 
 ```sh

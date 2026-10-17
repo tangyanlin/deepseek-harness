@@ -30,6 +30,24 @@ export function signMacOSRuntimeCode(
 ): Promise<void>
 
 /**
+ * Ad-hoc sign one Mach-O file for a local, non-distributed macOS build.
+ * @param path - Writable standalone Mach-O file.
+ * @param identifier - Stable code-signing identifier derived from the release app ID and CAS digest.
+ * @param entitlements - Optional entitlement plist for this executable.
+ */
+export function signMacOSRuntimeCodeAdHoc(
+  path: string,
+  identifier: string,
+  entitlements?: string,
+): Promise<void>
+
+/**
+ * Ad-hoc sign an assembled application bundle for local use only.
+ * @param appPath - Path to the `.app` directory.
+ */
+export function signMacOSAppAdHoc(appPath: string): void
+
+/**
  * Verify one Mach-O file embedded in the runtime tree.
  * @param path - Mach-O file to inspect.
  * @param expected - Public release identity.

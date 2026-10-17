@@ -382,6 +382,15 @@ pnpm run package:desktop:dir
 pnpm run package:desktop:mac:arm64:dir
 ```
 
+For a local, double-clickable macOS `.app` without Apple Developer ID signing or notarization credentials, use the matching `:unsigned` command:
+
+```sh
+pnpm run package:desktop:mac:arm64:unsigned
+pnpm run package:desktop:mac:x64:unsigned
+```
+
+It runs the same build and runtime preparation, assembles an unpacked application directory, and ad-hoc signs every embedded Mach-O file plus the final bundle so it launches on Apple Silicon. The result is written to `apps/desktop/.desktop-build/targets/<target>/artifacts/<platform>/DeepSeek Harness.app` (`mac-arm64` for arm64, `mac` for x64). The local `.env.macos` still requires `DSH_DESKTOP_APP_ID` and the selected mandatory-update origin, but no signing or notarization fields. The output carries an anonymous ad-hoc signature and no automatic-update configuration, so it is local-development only and ineligible for release upload. `pnpm run install:desktop:mac:arm64` runs this arm64 build and copies the result over `/Applications/DeepSeek Harness.app`, so an existing Finder or Dock icon launches the rebuilt application after each update.
+
 To inspect or troubleshoot the prepared host-target resources without invoking electron-builder, stop the same pipeline after preparation:
 
 ```sh

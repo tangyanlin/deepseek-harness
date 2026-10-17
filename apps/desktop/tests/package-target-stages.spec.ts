@@ -5,6 +5,7 @@ import { withMacOSNotarizationProxy } from '../scripts/macos-notarization-proxy.
 import { packageMacOSArtifacts } from '../scripts/package-macos.ts'
 import { withWindowsSigningStage } from '../scripts/windows-signing-stage.mjs'
 import { prepareWindowsSignatureCacheDirectory } from '../scripts/windows-signature-cache-directory.mjs'
+import { signMacOSAppAdHoc } from '../scripts/verify-macos-signature.mjs'
 
 vi.mock('../scripts/macos-notarization-proxy.ts', () => ({
   withMacOSNotarizationProxy: vi.fn(async (_proxy: string | undefined, action: () => Promise<void>) => action()),
@@ -18,6 +19,10 @@ vi.mock('../scripts/windows-signing-stage.mjs', () => ({
 vi.mock('../scripts/windows-signature-cache-directory.mjs', () => ({
   prepareWindowsSignatureCacheDirectory: vi.fn(async () => {}),
   resolveWindowsSignatureCacheDirectory: vi.fn(() => 'C:\\fixture-cache'),
+}))
+vi.mock('../scripts/verify-macos-signature.mjs', async importOriginal => ({
+  ...await importOriginal<typeof import('../scripts/verify-macos-signature.mjs')>(),
+  signMacOSAppAdHoc: vi.fn(),
 }))
 
 // Keep the real orchestration and manifest reads; this suite owns no release directories or subprocesses.
@@ -166,5 +171,15 @@ it('does not write a release completion record when Apple proxy cleanup fails', 
   vi.mocked(withMacOSNotarizationProxy).mockRejectedValueOnce(new Error('proxy restoration failed'))
   await expect(packageTarget(parseDesktopPackageInvocation(['mac-arm64'], 'darwin', 'arm64'), environment, run))
     .rejects.toThrow('proxy restoration failed')
+  expect(writeFileSync).not.toHaveBeenCalled()
+})
+
+it('ad-hoc signs the assembled application for unsigned macOS and records no release', async () => {
+  const { run, stages } = supervisor()
+  await packageTarget(parseDesktopPackageInvocation(['mac-arm64', '--unsigned'], 'darwin', 'arm64'), environment, run)
+  expect(stages[0]).toBe('run build:official')
+  expect(stages).not.toContain('preflight:windows-signing')
+  expect(stages).toContain('exec electron-builder --config electron-builder.config.mjs --mac --arm64 --publish never --dir')
+  expect(signMacOSAppAdHoc).toHaveBeenCalledWith(expect.stringContaining('DeepSeek Harness.app'))
   expect(writeFileSync).not.toHaveBeenCalled()
 })

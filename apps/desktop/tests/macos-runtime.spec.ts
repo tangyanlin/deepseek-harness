@@ -2,10 +2,12 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { signMacOSRuntime } from '../scripts/macos-runtime.ts'
-import { signMacOSRuntimeCode, verifyMacOSRuntimeCode } from '../scripts/verify-macos-signature.mjs'
+import { signMacOSRuntime, signMacOSRuntimeAdHoc } from '../scripts/macos-runtime.ts'
+import { signMacOSRuntimeCode, signMacOSRuntimeCodeAdHoc, verifyMacOSRuntimeCode } from '../scripts/verify-macos-signature.mjs'
 
-vi.mock('../scripts/verify-macos-signature.mjs', () => ({ signMacOSRuntimeCode: vi.fn(), verifyMacOSRuntimeCode: vi.fn() }))
+vi.mock('../scripts/verify-macos-signature.mjs', () => ({
+  signMacOSRuntimeCode: vi.fn(), signMacOSRuntimeCodeAdHoc: vi.fn(), verifyMacOSRuntimeCode: vi.fn(),
+}))
 const roots: string[] = []
 function root(): string {
   const path = mkdtempSync(join(tmpdir(), 'desktop-signing-'))
@@ -66,4 +68,17 @@ it.each(['arm64', 'x64'] as const)('selects %s Node entitlements and keeps helpe
       join(import.meta.dirname, '../scripts/jit-entitlements.plist'))
   }
   expect(signMacOSRuntimeCode).toHaveBeenCalledWith(addon, expect.any(String), identity, undefined)
+})
+
+it('ad-hoc signs Mach-O files without a Developer ID identity or verification', async () => {
+  const path = root()
+  mkdirSync(join(path, 'dependencies/node/bin'), { recursive: true })
+  const node = join(path, 'dependencies/node/bin/node')
+  const addon = join(path, 'addon.node')
+  for (const file of [node, addon]) writeFileSync(file, Buffer.from('cffaedfe00000000', 'hex'))
+  await expect(signMacOSRuntimeAdHoc(path, 'com.example.app', 'arm64')).resolves.toBe(2)
+  expect(signMacOSRuntimeCodeAdHoc).toHaveBeenCalledWith(node, expect.stringMatching(/^com\.example\.app\.runtime\.[a-f0-9]{64}$/u),
+    join(import.meta.dirname, '../scripts/jit-entitlements.plist'))
+  expect(signMacOSRuntimeCodeAdHoc).toHaveBeenCalledWith(addon, expect.any(String), undefined)
+  expect(verifyMacOSRuntimeCode).not.toHaveBeenCalled()
 })
