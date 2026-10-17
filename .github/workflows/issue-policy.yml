@@ -14,6 +14,9 @@ permissions:
 jobs:
   policy:
     name: Issue policy
+    # The policy engine reads the upstream org project and signs its reads with
+    # org-scoped app credentials; skip where the owning org does not configure them.
+    if: ${{ vars.DSH_ISSUE_APP_CLIENT_ID != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out trusted policy

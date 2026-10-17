@@ -29,6 +29,7 @@
     "package:mac:arm64": "tsx scripts/package-target.ts mac-arm64",
     "package:mac:arm64:unsigned": "tsx scripts/package-target.ts mac-arm64 --unsigned",
     "package:mac:arm64:dir": "tsx scripts/package-target.ts mac-arm64 --dir",
+    "install:mac:arm64": "pnpm run package:mac:arm64:unsigned && rm -rf '/Applications/DeepSeek Harness.app' && ditto '.desktop-build/targets/mac-arm64/unsigned-artifacts/mac-arm64/DeepSeek Harness.app' '/Applications/DeepSeek Harness.app'",
     "package:mac:x64": "tsx scripts/package-target.ts mac-x64",
     "package:mac:x64:unsigned": "tsx scripts/package-target.ts mac-x64 --unsigned",
     "package:mac:x64:dir": "tsx scripts/package-target.ts mac-x64 --dir",

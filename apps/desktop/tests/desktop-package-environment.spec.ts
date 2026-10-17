@@ -178,6 +178,12 @@ describe('Desktop local packaging configuration', () => {
     }
   })
 
+  it('accepts unsigned macOS configuration without signing or notarization credentials', () => {
+    expect(() => {
+      validateDesktopPackageEnvironment({ ...POLICY, DSH_DESKTOP_APP_ID: RELEASE.DSH_DESKTOP_APP_ID }, MACOS, { unsigned: true })
+    }).not.toThrow()
+  })
+
   it('rejects incomplete macOS identity and credentials and checks referenced files without contacting Apple', async () => {
     expect(() => {
       validateDesktopPackageEnvironment(RELEASE, MACOS)
