@@ -130,36 +130,6 @@ export async function signMacOSRuntimeCode(path, identifier, expected, entitleme
 }
 
 /**
- * Ad-hoc sign one Mach-O file for a local, non-distributed macOS build.
- * The anonymous `-` identity satisfies Apple Silicon's code-signature requirement
- * without a Developer ID certificate; entitlements are applied only where supplied.
- * @param {string} path - Writable standalone Mach-O file.
- * @param {string} identifier - Stable code-signing identifier derived from the release app ID and CAS digest.
- * @param {string | undefined} entitlements - Optional entitlement plist for this executable.
- * @returns {Promise<void>} Resolves after codesign exits successfully.
- */
-export async function signMacOSRuntimeCodeAdHoc(path, identifier, entitlements) {
-  await runAppleCommandAsync('/usr/bin/codesign', [
-    '--force',
-    '--sign', '-',
-    '--identifier', identifier,
-    ...(entitlements === undefined ? [] : ['--entitlements', entitlements]),
-    path,
-  ], 'codesign')
-}
-
-/**
- * Ad-hoc sign an assembled application bundle for local use only.
- * The anonymous identity satisfies Apple Silicon's launch requirement without a
- * Developer ID certificate; nested code keeps the signatures written during runtime preparation.
- * @param {string} appPath - Path to the `.app` directory.
- * @returns {void}
- */
-export function signMacOSAppAdHoc(appPath) {
-  runCodeSign(['--force', '--sign', '-', appPath])
-}
-
-/**
  * Verify one Mach-O file embedded in the runtime tree.
  * @param {string} path - Mach-O file to inspect.
  * @param {{ signingIdentity: string, teamId: string }} expected - Public release identity.
@@ -202,9 +172,7 @@ export function verifyMacOSNotarizedApplication(appPath, expected) {
  * @returns {void}
  */
 export function verifyMacOSDiskImage(diskImagePath, expected) {
-  runCodeSign(['--verify', '--strict', '--verbose=2', diskImagePath])
-  const details = runCodeSign(['--display', '--verbose=4', diskImagePath])
-  assertMacOSSignatureDetails(details, expected)
+  verifyMacOSDiskImageSignature(diskImagePath, expected)
   runAppleCommand('/usr/bin/xcrun', ['stapler', 'validate', diskImagePath], 'stapler validate')
   runAppleCommand('/usr/sbin/spctl', ['--assess', '--type', 'install', '--verbose=4', diskImagePath], 'spctl')
 }
@@ -231,4 +199,16 @@ if (process.argv[1] !== undefined && import.meta.filename === resolve(process.ar
   const expected = resolveMacOSSigningEnvironment(loadDesktopPackageEnvironment('darwin'))
   verifyMacOSSignature(resolve(appPath), expected)
   process.stdout.write(`desktop macOS signing: verified Developer ID Application: ${expected.signingIdentity} (${expected.teamId})\n`)
+}
+
+/**
+ * Verify a disk image's code signature and Developer ID without requiring a notarization ticket.
+ * @param {string} diskImagePath Path to the packaged `.dmg` file.
+ * @param {{ signingIdentity: string, teamId: string }} expected Public signing identity.
+ * @returns {void}
+ */
+export function verifyMacOSDiskImageSignature(diskImagePath, expected) {
+  runCodeSign(['--verify', '--strict', '--verbose=2', diskImagePath])
+  const details = runCodeSign(['--display', '--verbose=4', diskImagePath])
+  assertMacOSSignatureDetails(details, expected)
 }

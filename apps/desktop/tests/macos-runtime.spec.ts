@@ -1,13 +1,11 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { signMacOSRuntime, signMacOSRuntimeAdHoc } from '../scripts/macos-runtime.ts'
-import { signMacOSRuntimeCode, signMacOSRuntimeCodeAdHoc, verifyMacOSRuntimeCode } from '../scripts/verify-macos-signature.mjs'
+import { signMacOSRuntime } from '../scripts/macos-runtime.ts'
+import { signMacOSRuntimeCode, verifyMacOSRuntimeCode } from '../scripts/verify-macos-signature.mjs'
 
-vi.mock('../scripts/verify-macos-signature.mjs', () => ({
-  signMacOSRuntimeCode: vi.fn(), signMacOSRuntimeCodeAdHoc: vi.fn(), verifyMacOSRuntimeCode: vi.fn(),
-}))
+vi.mock('../scripts/verify-macos-signature.mjs', () => ({ signMacOSRuntimeCode: vi.fn(), verifyMacOSRuntimeCode: vi.fn() }))
 const roots: string[] = []
 function root(): string {
   const path = mkdtempSync(join(tmpdir(), 'desktop-signing-'))
@@ -26,6 +24,41 @@ it('signs Mach-O files in their final locations and verifies each signature', as
   await expect(signMacOSRuntime(path, 'com.example.app', identity, 'arm64')).resolves.toBe(1)
   expect(signMacOSRuntimeCode).toHaveBeenCalledWith(join(path, 'addon.node'), expect.stringMatching(/^com\.example\.app\.runtime\.[a-f0-9]{64}$/u), identity, undefined)
   expect(verifyMacOSRuntimeCode).toHaveBeenCalledWith(join(path, 'addon.node'), identity)
+})
+
+// File symlinks in these macOS fixtures require privileges unavailable to ordinary Windows processes.
+it.skipIf(process.platform === 'win32')('signs a shared Python interpreter once and retains both executable aliases', async () => {
+  const path = root()
+  const bin = join(path, 'dependencies/python/bin')
+  mkdirSync(bin, { recursive: true })
+  writeFileSync(join(path, 'runtime.json'), JSON.stringify({ desktopVersion: '1', platform: 'darwin', arch: 'arm64', python: '3.12.14', pythonPackages: {} }))
+  writeFileSync(join(bin, 'python3.12'), Buffer.from('cffaedfe00000000', 'hex'))
+  for (const name of ['python', 'python3']) symlinkSync('python3.12', join(bin, name))
+  await expect(signMacOSRuntime(path, 'com.example.app', identity, 'arm64', undefined, 'primary')).resolves.toBe(1)
+  expect(signMacOSRuntimeCode).toHaveBeenCalledExactlyOnceWith(join(bin, 'python3.12'), expect.any(String), identity, undefined)
+  for (const name of ['python', 'python3']) expect(readlinkSync(join(bin, name))).toBe('python3.12')
+  await expect(signMacOSRuntime(path, 'com.example.app', identity, 'arm64')).rejects.toThrow('unsupported filesystem entry')
+})
+
+// The signer must inspect real file symlinks, including dangling and cyclic ones.
+it.skipIf(process.platform === 'win32').each(['unknown', 'absolute', 'escaping', 'dangling', 'chained', 'directory'])('rejects a %s runtime link before signing any file', async (kind) => {
+  const path = root()
+  const bin = join(path, 'dependencies/python/bin')
+  mkdirSync(bin, { recursive: true })
+  writeFileSync(join(path, 'runtime.json'), JSON.stringify({ desktopVersion: '1', platform: 'darwin', arch: 'arm64', python: '3.12.14', pythonPackages: {} }))
+  const canonical = join(bin, 'python3.12')
+  if (kind === 'directory') mkdirSync(canonical)
+  else if (kind !== 'dangling') writeFileSync(canonical, Buffer.from('cffaedfe00000000', 'hex'))
+  if (kind === 'chained') {
+    rmSync(canonical)
+    symlinkSync('python3', canonical)
+  }
+  const target = kind === 'absolute' ? canonical : kind === 'escaping' ? '../outside' : 'python3.12'
+  symlinkSync(target, join(bin, kind === 'unknown' ? 'unlisted' : 'python3'))
+  const result = signMacOSRuntime(path, 'com.example.app', identity, 'arm64', undefined, 'primary')
+  if (kind === 'dangling') await expect(result).rejects.toMatchObject({ code: 'ENOENT', path: canonical })
+  else await expect(result).rejects.toThrow(kind === 'unknown' ? 'unsupported filesystem entry' : 'invalid Python alias')
+  expect(signMacOSRuntimeCode).not.toHaveBeenCalled()
 })
 it('awaits other signers before rejecting and permitting output cleanup', async () => {
   const path = root()
@@ -68,17 +101,4 @@ it.each(['arm64', 'x64'] as const)('selects %s Node entitlements and keeps helpe
       join(import.meta.dirname, '../scripts/jit-entitlements.plist'))
   }
   expect(signMacOSRuntimeCode).toHaveBeenCalledWith(addon, expect.any(String), identity, undefined)
-})
-
-it('ad-hoc signs Mach-O files without a Developer ID identity or verification', async () => {
-  const path = root()
-  mkdirSync(join(path, 'dependencies/node/bin'), { recursive: true })
-  const node = join(path, 'dependencies/node/bin/node')
-  const addon = join(path, 'addon.node')
-  for (const file of [node, addon]) writeFileSync(file, Buffer.from('cffaedfe00000000', 'hex'))
-  await expect(signMacOSRuntimeAdHoc(path, 'com.example.app', 'arm64')).resolves.toBe(2)
-  expect(signMacOSRuntimeCodeAdHoc).toHaveBeenCalledWith(node, expect.stringMatching(/^com\.example\.app\.runtime\.[a-f0-9]{64}$/u),
-    join(import.meta.dirname, '../scripts/jit-entitlements.plist'))
-  expect(signMacOSRuntimeCodeAdHoc).toHaveBeenCalledWith(addon, expect.any(String), undefined)
-  expect(verifyMacOSRuntimeCode).not.toHaveBeenCalled()
 })
